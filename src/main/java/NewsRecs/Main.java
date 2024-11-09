@@ -16,5 +16,10 @@ public class Main {
         }
 
         System.out.println("All articles have been fetched and saved to the database.");
+
+        // Start the CLI Interface
+        RecommendationEngine recommendationEngine = new RecommendationEngine(dbHandler, articleFetcher);
+        Interface cliInterface = new Interface(dbHandler, recommendationEngine);
+        cliInterface.start();
     }
 }
