@@ -20,6 +20,8 @@ public class Main {
         // Start the CLI Interface
         RecommendationEngine recommendationEngine = new RecommendationEngine(dbHandler, articleFetcher);
         Interface cliInterface = new Interface(dbHandler, recommendationEngine);
+
+        // Call the start method to launch the CLI
         cliInterface.start();
     }
 }

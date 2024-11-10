@@ -31,10 +31,9 @@ public class DatabaseHandler {
             pstmt.setString(2, user.getPassword());
             pstmt.executeUpdate();
 
-            // Retrieve auto-generated userID
             ResultSet keys = pstmt.getGeneratedKeys();
             if (keys.next()) {
-                user.setUserID(String.valueOf(keys.getInt(1))); // Assuming userID is an INT type in the database
+                user.setUserID(String.valueOf(keys.getInt(1)));
             }
 
             System.out.println("User saved successfully with userID: " + user.getUserID());
@@ -70,7 +69,6 @@ public class DatabaseHandler {
             pstmt.setDate(7, new java.sql.Date(article.getPublishDate().getTime()));
             pstmt.setString(8, article.getSource());
             pstmt.executeUpdate();
-            System.out.println("Article saved successfully!");
         } catch (SQLException e) {
             e.printStackTrace();
         }
@@ -105,11 +103,14 @@ public class DatabaseHandler {
     }
 
     public User getUser(String username, String password) {
-        String selectSQL = "SELECT * FROM users WHERE username = ? AND password = ?";
+        // Add BINARY to enforce case sensitivity on the username comparison
+        String selectSQL = "SELECT * FROM users WHERE BINARY username = ? AND password = ?";
+
         try (PreparedStatement pstmt = getConnection().prepareStatement(selectSQL)) {
             pstmt.setString(1, username);
             pstmt.setString(2, password);
             ResultSet rs = pstmt.executeQuery();
+
             if (rs.next()) {
                 String userId = rs.getString("user_id");
                 User user = new User(userId, username, password);
@@ -122,6 +123,7 @@ public class DatabaseHandler {
         }
         return null;
     }
+
 
     private List<String> getUserPreferences(String userId) {
         List<String> preferences = new ArrayList<>();
