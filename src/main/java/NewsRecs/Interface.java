@@ -7,14 +7,16 @@ import java.util.Scanner;
 public class Interface {
     private DatabaseHandler dbHandler;
     private RecommendationEngine recommendationEngine;
+    private ArticleFetcher articleFetcher;
     private Scanner scanner;
-    private List<Articles> viewedArticles;  // Track fully viewed articles
+    private List<Articles> viewedArticles; // List to track fully viewed articles
 
-    public Interface(DatabaseHandler dbHandler, RecommendationEngine recommendationEngine) {
+    public Interface(DatabaseHandler dbHandler, RecommendationEngine recommendationEngine, ArticleFetcher articleFetcher) {
         this.dbHandler = dbHandler;
         this.recommendationEngine = recommendationEngine;
+        this.articleFetcher = articleFetcher;
         this.scanner = new Scanner(System.in);
-        this.viewedArticles = new ArrayList<>();  // Initialize viewed articles list
+        this.viewedArticles = new ArrayList<>(); // Initialize viewed articles list
     }
 
     public void start() {
@@ -25,8 +27,7 @@ public class Interface {
             System.out.println("2. Login to Existing Account");
             System.out.println("3. Exit");
 
-            int choice = scanner.nextInt();
-            scanner.nextLine(); // consume newline
+            int choice = readIntInput();
 
             switch (choice) {
                 case 1 -> createAccount();
@@ -42,15 +43,52 @@ public class Interface {
 
     private void createAccount() {
         System.out.print("Enter username: ");
-        String username = scanner.nextLine();
+        String username = scanner.nextLine().trim();
         System.out.print("Enter password: ");
-        String password = scanner.nextLine();
+        String password = scanner.nextLine().trim();
+
+        if (dbHandler.isUsernameExists(username)) {
+            System.out.println("Username already exists. Please choose a different username.");
+            return;
+        }
 
         User newUser = User.createAccount(username, password);
-        dbHandler.saveUser(newUser);
+        boolean isSaved = dbHandler.saveUser(newUser);
 
-        selectPreferences(newUser);
-        dashboard(newUser);
+        if (isSaved) {
+            System.out.println("Account created successfully!");
+
+            List<Articles> articlesList = articleFetcher.fetchMultipleCategories(50);
+            for (Articles article : articlesList) {
+                dbHandler.saveArticle(article);
+            }
+
+            selectPreferences(newUser);
+            dashboard(newUser);
+        } else {
+            System.out.println("Account creation failed. Please try again.");
+        }
+    }
+
+    private void login() {
+        System.out.print("Enter username: ");
+        String username = scanner.nextLine().trim();
+        System.out.print("Enter password: ");
+        String password = scanner.nextLine().trim();
+
+        User user = dbHandler.getUser(username, password);
+        if (user != null) {
+            System.out.println("Login successful!");
+
+            List<Articles> articlesList = articleFetcher.fetchMultipleCategories(50);
+            for (Articles article : articlesList) {
+                dbHandler.saveArticle(article);
+            }
+
+            dashboard(user);
+        } else {
+            System.out.println("Invalid username or password.");
+        }
     }
 
     private void selectPreferences(User user) {
@@ -83,23 +121,8 @@ public class Interface {
         System.out.println("Preferences updated successfully!");
     }
 
-    private void login() {
-        System.out.print("Enter username: ");
-        String username = scanner.nextLine();
-        System.out.print("Enter password: ");
-        String password = scanner.nextLine();
-
-        User user = dbHandler.getUser(username, password);
-        if (user != null) {
-            System.out.println("Login successful!");
-            dashboard(user);
-        } else {
-            System.out.println("Invalid username or password.");
-        }
-    }
-
     private void dashboard(User user) {
-        viewedArticles.clear(); // Clear viewed articles on each new login session
+        viewedArticles.clear(); // Clear viewed articles on login
         while (true) {
             System.out.println("\nDashboard - Select an option:");
             System.out.println("1. View Recommendations");
@@ -107,8 +130,7 @@ public class Interface {
             System.out.println("3. Rate an Article");
             System.out.println("4. Logout");
 
-            int choice = scanner.nextInt();
-            scanner.nextLine(); // consume newline
+            int choice = readIntInput();
 
             switch (choice) {
                 case 1 -> viewRecommendations(user);
@@ -116,6 +138,7 @@ public class Interface {
                 case 3 -> rateArticle(user);
                 case 4 -> {
                     System.out.println("Logging out...");
+                    viewedArticles.clear(); // Clear viewed articles on logout
                     return;
                 }
                 default -> System.out.println("Invalid choice. Please try again.");
@@ -123,43 +146,11 @@ public class Interface {
         }
     }
 
-    private void viewRecommendations(User user) {
-        List<Articles> recommendations = recommendationEngine.getRecommendations(user);
-
-        System.out.println("\nYour Recommendations (showing top 10):");
-        for (int i = 0; i < Math.min(recommendations.size(), 10); i++) {
-            Articles article = recommendations.get(i);
-            System.out.println((i + 1) + ". " + article.getTitle() + " (" + article.getCategory() + ") [ID: " + article.getArticleId() + "]");
-        }
-
-        System.out.print("Enter the number of the article you wish to read, or type 'Exit' to return to the dashboard: ");
-        String input = scanner.nextLine().trim();
-
-        if (input.equalsIgnoreCase("Exit")) {
-            System.out.println("Returning to the dashboard...");
-            return;
-        }
-
-        try {
-            int choice = Integer.parseInt(input);
-            if (choice > 0 && choice <= Math.min(recommendations.size(), 10)) {
-                Articles selectedArticle = recommendations.get(choice - 1);
-                displayFullArticle(selectedArticle);
-                viewedArticles.add(selectedArticle);  // Add to viewed list
-            } else {
-                System.out.println("Invalid choice. Please try again.");
-            }
-        } catch (NumberFormatException e) {
-            System.out.println("Invalid input. Please enter a number between 1 and 10, or 'Exit' to return to the dashboard.");
-        }
-    }
-
     private void selectCategoryToRead(User user) {
         System.out.println("Select a category:");
         System.out.println("1. Sports\n2. Technology\n3. Politics\n4. Health\n5. Entertainment\n6. Business");
 
-        int choice = scanner.nextInt();
-        scanner.nextLine(); // consume newline
+        int choice = readIntInput();
         String category = switch (choice) {
             case 1 -> "Sports";
             case 2 -> "Technology";
@@ -174,14 +165,22 @@ public class Interface {
         };
 
         if (category != null) {
+            // Fetch articles for the selected category
             List<Articles> articles = dbHandler.getArticlesByCategory(category);
-            System.out.println("Articles in " + category + ":");
-            for (int i = 0; i < Math.min(articles.size(), 10); i++) {
-                Articles article = articles.get(i);
-                System.out.println((i + 1) + ". " + article.getTitle() + " [ID: " + article.getArticleId() + "]");
+
+            // Display a maximum of 10 articles
+            if (articles.isEmpty()) {
+                System.out.println("No articles found in the selected category.");
+                return;
             }
 
-            System.out.print("Enter the number of the article you wish to read, or type 'Exit' to return to the dashboard: ");
+            System.out.println("Articles in category: " + category);
+            for (int i = 0; i < Math.min(articles.size(), 10); i++) {
+                Articles article = articles.get(i);
+                System.out.println((i + 1) + ". " + article.getTitle() + " - " + article.getSource() + " [ID: " + article.getArticleId() + "]");
+            }
+
+            System.out.print("Enter the number of the article you wish to view, or type 'Exit' to return: ");
             String input = scanner.nextLine().trim();
 
             if (input.equalsIgnoreCase("Exit")) {
@@ -194,19 +193,55 @@ public class Interface {
                 if (articleChoice > 0 && articleChoice <= Math.min(articles.size(), 10)) {
                     Articles selectedArticle = articles.get(articleChoice - 1);
                     displayFullArticle(selectedArticle);
-                    viewedArticles.add(selectedArticle);  // Add to viewed list
+                    viewedArticles.add(selectedArticle); // Add the article to the viewed list
                 } else {
                     System.out.println("Invalid choice. Please try again.");
                 }
             } catch (NumberFormatException e) {
-                System.out.println("Invalid input. Please enter a number or 'Exit' to return to the dashboard.");
+                System.out.println("Invalid input. Please enter a valid number between 1 and 10.");
             }
+        }
+    }
+
+
+    private void viewRecommendations(User user) {
+        List<Articles> recommendations = recommendationEngine.getRecommendations(user);
+
+        if (recommendations.isEmpty()) {
+            System.out.println("No recommendations available at this time.");
+            return;
+        }
+
+        System.out.println("\nYour Recommendations (showing top 10):");
+        for (int i = 0; i < Math.min(recommendations.size(), 10); i++) {
+            Articles article = recommendations.get(i);
+            System.out.println((i + 1) + ". " + article.getTitle() + " (" + article.getCategory() + ") [ID: " + article.getArticleId() + "]");
+        }
+
+        System.out.print("Enter the number of the article you wish to read, or type 'Exit' to return to the dashboard: ");
+        String input = scanner.nextLine().trim();
+
+        if (input.equalsIgnoreCase("Exit")) {
+            return;
+        }
+
+        try {
+            int choice = Integer.parseInt(input);
+            if (choice > 0 && choice <= Math.min(recommendations.size(), 10)) {
+                Articles selectedArticle = recommendations.get(choice - 1);
+                displayFullArticle(selectedArticle);
+                viewedArticles.add(selectedArticle);
+            } else {
+                System.out.println("Invalid choice. Please try again.");
+            }
+        } catch (NumberFormatException e) {
+            System.out.println("Invalid input. Please try again.");
         }
     }
 
     private void rateArticle(User user) {
         if (viewedArticles.isEmpty()) {
-            System.out.println("No articles have been viewed yet. Please view an article first.");
+            System.out.println("No articles available to rate. Please view articles first.");
             return;
         }
 
@@ -216,41 +251,40 @@ public class Interface {
             System.out.println((i + 1) + ". " + article.getTitle() + " [ID: " + article.getArticleId() + "]");
         }
 
-        System.out.print("Enter the article ID of the article you want to rate: ");
-        String articleId = scanner.nextLine().trim();  // Read and trim input for comparison
+        System.out.print("Enter the number of the article you want to rate: ");
+        int articleIndex = readIntInput();
 
-        // Find the article in viewedArticles by articleId
-        Articles articleToRate = null;
-        for (Articles article : viewedArticles) {
-            if (article.getArticleId().equals(articleId)) {  // Compare IDs directly
-                articleToRate = article;
-                break;
-            }
-        }
-
-        if (articleToRate == null) {
-            System.out.println("Article not found in viewed articles list.");
+        if (articleIndex < 1 || articleIndex > viewedArticles.size()) {
+            System.out.println("Invalid choice. Please try again.");
             return;
         }
 
+        Articles articleToRate = viewedArticles.get(articleIndex - 1);
         System.out.print("Enter rating (1-5): ");
-        int rating = scanner.nextInt();
-        scanner.nextLine(); // consume newline
+        int rating = readIntInput();
 
-        user.rateArticle(articleToRate, rating, dbHandler);
-        System.out.println("Thank you for rating the article!");
+        if (rating < 1 || rating > 5) {
+            System.out.println("Invalid rating. Please try again.");
+            return;
+        }
+
+        dbHandler.saveRating(user.getUserID(), articleToRate.getArticleId(), rating);
+        System.out.println("Rating saved successfully!");
     }
 
-
     private void displayFullArticle(Articles article) {
-        System.out.println("\n--- Full Article ---");
-        System.out.println("Title: " + article.getTitle());
+        System.out.println("\nTitle: " + article.getTitle());
         System.out.println("Category: " + article.getCategory());
-        System.out.println("Author: " + article.getAuthor());
-        System.out.println("Published Date: " + article.getPublishDate());
-        System.out.println("Source: " + article.getSource());
-        System.out.println("Content: " + article.getContent());
+        System.out.println("Description: " + article.getDescription());
         System.out.println("URL: " + article.getUrl());
-        System.out.println("-------------------\n");
+    }
+
+    private int readIntInput() {
+        try {
+            return Integer.parseInt(scanner.nextLine().trim());
+        } catch (NumberFormatException e) {
+            System.out.println("Invalid input. Please enter a valid number.");
+            return -1; // Returning -1 for invalid input
+        }
     }
 }

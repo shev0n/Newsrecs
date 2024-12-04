@@ -4,7 +4,7 @@ import java.util.Date;
 
 public class Articles {
     // Attributes
-    private String articleId;
+    private int articleId; // Change to int
     private String url;
     private String title;
     private String content;
@@ -15,10 +15,10 @@ public class Articles {
     private String source;
 
     // Constructor
-    public Articles(String articleId, String url, String title, String content, String author, String description,
+    public Articles(int articleId, String url, String title, String content, String author, String description,
                     String category, Date publishDate, String source) {
         this.articleId = articleId;
-        this.url = url;             // Set the URL here
+        this.url = url;
         this.title = title;
         this.content = content;
         this.author = author;
@@ -29,11 +29,11 @@ public class Articles {
     }
 
     // Getter and Setter methods
-    public String getArticleId() {
+    public int getArticleId() {
         return articleId;
     }
 
-    public void setArticleId(String articleId) {
+    public void setArticleId(int articleId) {
         this.articleId = articleId;
     }
 
